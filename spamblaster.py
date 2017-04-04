@@ -2,6 +2,9 @@
 
 from sklearn.feature_extraction.text import HashingVectorizer
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfTransformer
+from sklearn.metrics import roc_curve
+
 from xgboost import XGBClassifier
 from sklearn.naive_bayes import MultinomialNB
 import glob
@@ -32,9 +35,15 @@ class Calibrator(BaseEstimator, ClassifierMixin):
         return self.base_estimator.predict_proba(X)
 
 def main():
-    n = 3
-    areSpamFiles = glob.glob("data/spam_split/*.txt")
-    notSpamFiles = glob.glob("data/not-spam_split/*.txt")
+    n = 7
+    areSpamFiles = []
+    notSpamFiles = []
+    areSpamFiles.extend(glob.glob("data/spam_split/*.txt"))
+    notSpamFiles.extend(glob.glob("data/not-spam_split/*.txt"))
+    
+    areSpamFiles.extend(glob.glob("sms_data/spam_split/*.txt"))
+    #notSpamFiles.extend(glob.glob("sms_data/not-spam_split/*.txt"))
+    
     areSpamLabels = np.ones((len(areSpamFiles),))
     notSpamLabels = np.zeros((len(notSpamFiles),))
     labels = np.concatenate((areSpamLabels, notSpamLabels))
@@ -47,15 +56,12 @@ def main():
     for fname in mFiles:
         with open(fname) as fp:
             docs.append(fp.read())
-    featureExtractor = HashingVectorizer(decode_error='ignore', analyzer='char', ngram_range=(2,2), norm=None, stop_words='english', non_negative=True)
-    #featureExtractor = CountVectorizer(decode_error='ignore', analyzer='char', ngram_range=(2,2))
-    randomProjector = random_projection.SparseRandomProjection()
-    #with open("featureExtractor.pkl", "rb") as fp:
-    #    featureExtractor = pickle.load(fp)
-    X = featureExtractor.transform(docs)
-    #X = featureExtractor.transform(mFiles)
-    #X = randomProjector.fit_transform(X)
+    #featureExtractor = HashingVectorizer(decode_error='ignore', analyzer='char', ngram_range=(3,3), norm=None, stop_words='english', non_negative=True)
+    #X = featureExtractor.transform(docs)
 
+    # With tfidf
+    #featureExtractor = TfidfVectorizer(decode_error='ignore', analyzer='char', ngram_range=(3,3), norm=None, stop_words='english')
+    #X = featureExtractor.fit_transform(docs)
     
     #Xcomponents = decomp.TruncatedSVD(2).fit_transform(X)
     #plt.scatter(Xcomponents[0:len(areSpamFiles),0], Xcomponents[0:len(areSpamFiles),1], label="Spam")
@@ -67,14 +73,17 @@ def main():
 
     
 
-    X, labels, mFiles = shuffle(X, labels, mFiles)
-    print X.shape
+    #X, labels, mFiles = shuffle(X, labels, mFiles)
+    #print X.shape
     #print X
     #sys.exit(0)
 
-    print("Deviation Target = ", 1/np.sqrt(X.shape[0]))
+    print("Deviation Target = ", 1/np.sqrt(len(mFiles)))
 
     parameters = {
+            'finalClassifier__alpha':[0.5, 1.0, 1.5]
+            #,'tfidf__use_idf': (True, False)
+            #,'tfidf__norm': [ 'l2']
      #   'finalClassifier__max_depth':[2,5],
      #   'finalClassifier__n_estimators':[100, 150, 200],
         # 'finalClassifier__base_estimator__objective':['binary:logistic']
@@ -84,6 +93,8 @@ def main():
         # ]
     }
     mPipeline = Pipeline([\
+            ("featureExtractor", HashingVectorizer(decode_error='ignore', analyzer='char', ngram_range=(3,3), norm=None, stop_words='english', non_negative=True)),
+            #("tfidf", TfidfTransformer()),
             ("finalClassifier", \
             #CalibratedClassifierCV(\
             #XGBClassifier(max_depth=1, n_estimators=10,
@@ -94,8 +105,8 @@ def main():
     print mPipeline
     # In case we actually care to try different parameters
     # Also handles the stratified K-fold for us 
-    mGridSearch = GridSearchCV(mPipeline, parameters, iid=False, verbose=1, scoring='roc_auc', cv=n, n_jobs=1)
-    mGridSearch.fit(X, list(labels))
+    mGridSearch = GridSearchCV(mPipeline, parameters, iid=False, verbose=1, scoring='roc_auc', cv=n, n_jobs=4)
+    mGridSearch.fit(docs, list(labels))
     #with open("SpamBlasterModel.pkl", "rb") as fp:
     #    mGridSearch = pickle.load(fp)
 
@@ -107,42 +118,51 @@ def main():
     testTxt = []
     with open("notspam.txt") as fp:
         testTxt.append(fp.read())
-    test = featureExtractor.transform(testTxt)
-    #test = randomProjector.transform(test)
-    print "testing notspam.txt", mGridSearch.predict_proba(test)
+    print "testing notspam.txt", mGridSearch.predict_proba(testTxt)
     
     testTxt = []
     with open("massage.txt") as fp:
         testTxt.append(fp.read())
-    test = featureExtractor.transform(testTxt)
-    #test = randomProjector.transform(test)
-    print "testing massage.txt", mGridSearch.predict_proba(test)
+    print "testing massage.txt", mGridSearch.predict_proba(testTxt)
     
     testTxt = []
     with open("isSpam.txt") as fp:
         testTxt.append(fp.read())
-    test = featureExtractor.transform(testTxt)
-    #test = randomProjector.transform(test)
-    print "testing isSpam.txt", mGridSearch.predict_proba(test)
+    print "testing isSpam.txt", mGridSearch.predict_proba(testTxt)
 
-    with open("featureExtractor.pkl", "wb") as fp:
-        pickle.dump(featureExtractor, fp)
-    
-    with open("SpamBlasterModel.pkl", "wb") as fp:
+    with open("pipeline.pkl", "wb") as fp:
         pickle.dump(mGridSearch, fp)
+    print mGridSearch.get_params()
 
+    fpr, tpr, _ = roc_curve(list(labels), mGridSearch.predict_proba(docs)[:,1])
+    plt.figure()
+    lw = 2
+    plt.plot(fpr, tpr, color='darkorange',
+                     lw=lw, label='ROC curve (area = %0.2f)' % mGridSearch.best_score_)
+    plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver operating characteristic example')
+    plt.legend(loc="lower right")
+    plt.show()
+    
 def classifyBlob(txt):
 
-    with open("featureExtractor.pkl", "rb") as fp:
-        featureExtractor = pickle.load(fp)
-    
-    with open("SpamBlasterModel.pkl", "rb") as fp:
+    with open("pipeline.pkl", "rb") as fp:
         mGridSearch = pickle.load(fp)
     
-    featureExtractor = featureExtractor.set_params(input='content')
-    test = featureExtractor.transform([txt])
     print "[[Probability not spam, Probability spam]]"
-    print mGridSearch.predict_proba(test)
+    print mGridSearch.predict_proba([txt])
+
+def classifyBlobList(txt):
+
+    with open("pipeline.pkl", "rb") as fp:
+        mGridSearch = pickle.load(fp)
+    
+    print "[[Probability not spam, Probability spam]]"
+    print mGridSearch.predict_proba(txt)
 
 if __name__ == "__main__":
     main()
