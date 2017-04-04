@@ -15,5 +15,5 @@ SpamBlaster operates on sentence level feature vectors where each feature is a v
 
 Training SpamBlaster on notebook/forum posts for the past 10 days and validating with stratified k-fold (7 folds) yields 86% AUC score. However, this is at a sentence by sentence level, after bagging the predictions at a document level (taking an average) we vastly improve the prediction accuracy. Note, nearly all of the spam posts are rudimentary at best. Consequently, if we retrain with more advanced spam samples we expect to see 90%-98% AUC. Update: I added sms spam to the training samples.
 
-![ROC on sentence per sentence level](spamblaster_roc_1.png)
-![ROC on document level](spamblaster-roc-ensemble.png)
+![ROC on sentence per sentence level](/spamblaster_roc_1.png)
+![ROC on document level](/spamblaster-roc-ensemble.png)
