@@ -162,7 +162,10 @@ def classifyBlobList(txt):
         mGridSearch = pickle.load(fp)
     
     print "[[Probability not spam, Probability spam]]"
-    print mGridSearch.predict_proba(txt)
+    res = mGridSearch.predict_proba(txt)
+    print res
+    return res
+
 
 if __name__ == "__main__":
     main()
